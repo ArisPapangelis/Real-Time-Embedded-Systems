@@ -86,7 +86,7 @@ void samplingWithTimeStamps (int t,float dt){
 	while (flag){
 		gettimeofday(&timeStamp,NULL);
 		timeStamps[i] = timeStamp.tv_sec + 0.000001*timeStamp.tv_usec;
-		sleepTime.tv_nsec=(long int)(1000000000*dt-(timeStamps[i]-timeStamps[0]-0.1*i)*1000000000);
+		sleepTime.tv_nsec=(long int)(1000000000*dt-(timeStamps[i]-timeStamps[0]-dt*i)*1000000000);
 		nanosleep(&sleepTime, &timeRemaining);
 		i++;
 	}
