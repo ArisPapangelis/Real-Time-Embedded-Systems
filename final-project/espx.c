@@ -31,33 +31,66 @@ void produceMsg(int);
 void catch_int(int);
 void catch_term(int);
 
-char IPs[][14] = { 
-	"192.168.100.9", 
-	"192.168.100.4",
-	"192.168.100.7"
-};
+char **IPs;
 
-char messageList[][50] = {
-	"R U MINE", 
-	"Do I Wanna Know", 
-	"When The Sun Goes Down", 
-	"Electricity",
-	"Don't Forget Whose Legs You're On",
-	"Morning Glory",
-	"Butcher's Blues",
-	"Supersonic",
-	"Wasted"
-};
+char **messageList;
 
 char buff[BUFFLENGTH][MAX];
 int count=0;
 int fullBuffer=0;
 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t fd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int main(int argc, char *argv[]){
+void initialize_addresses(char *file){
+	FILE *fp;
+	int ip_count, i;
 
+	fp = fopen(file, "r");
+	
+	fscanf(fp, "%d\n", &ip_count);
+	IPs = (char **)malloc(ip_count * sizeof(char *)); 
+	printf("%d\n", ip_count);
+
+    for (i = 0; i < ip_count; i++){
+        IPs[i] = (char *)malloc(50 * sizeof(char));
+		fgets(IPs[i], 50, fp);
+		printf("%s\n", IPs[i]);
+
+	} 
+	fclose(fp);
+}
+
+void initialize_messages(char *file){
+	FILE *fp;
+	int message_count, i;
+
+	fp = fopen(file, "r");
+	
+	fscanf(fp, "%d\n", &message_count);
+	messageList = (char **)malloc(message_count * sizeof(char *)); 
+	printf("%d\n", message_count);
+
+    for (i = 0; i < message_count; i++){
+        messageList[i] = (char *)malloc(50 * sizeof(char));
+		fgets(messageList[i], 50, fp);
+		printf("%s\n", messageList[i]);
+
+	} 
+	fclose(fp);
+}
+
+int main(int argc, char *argv[]){
+	printf("%d\n", argc);
+	if(argc < 3){
+		printf("Not enough arguments given");
+		exit(-1);
+	}
+
+	// populate IPs and messageList
+	initialize_addresses(argv[1]);
+	initialize_messages(argv[2]);
+	
 	printf("MAIN:\tSetting up sig handlers...\n");
 	signal(SIGALRM,produceMsg);
 	signal(SIGTERM, catch_term);
