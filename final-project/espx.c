@@ -30,11 +30,12 @@ void *receiveMsg(void *);
 void produceMsg(int);
 void catch_int(int);
 void catch_term(int);
+void sendMsgs(int, int);
 
 char **IPs;
 int ip_count;
 
-int *IPsLastMsgReceivedIndex;
+int **IPsLastMsgReceivedIndex;
 char **IPsLastMsgReceived;
 
 char **messageList;
@@ -305,7 +306,7 @@ void *client(void *param){
 }
 
 void sendMsgs(int sock, int receiver){
-	int last_msg_sent_index = IPsLastMsgReceivedIndex[receiver];
+	int last_msg_sent_index = *IPsLastMsgReceivedIndex[receiver];
 	char *last_msg_sent = IPsLastMsgReceived[receiver];
 	int endIndex = count;
 	char ack[3];
