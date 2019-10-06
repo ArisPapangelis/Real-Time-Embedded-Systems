@@ -46,6 +46,9 @@ char buff[BUFFLENGTH][MAX_MSG_LENGTH];
 int count=0;
 int fullBuffer=0;
 
+char log_buffer[LOG_BATCH_SIZE][MAX_MSG_LENGTH];
+int curr_log_count = 0;
+
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t fd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -233,6 +236,7 @@ void *receiveMsg(void *newfd){
 		if (doubleMsg==0){
 			pthread_mutex_lock(&buffer_mutex);
 			strcpy(buff[count], receivedMsg);
+			logger(receivedMsg, 0);
 			count++;
 			pthread_mutex_unlock(&buffer_mutex);
 		}
@@ -346,10 +350,30 @@ void produceMsg(int sig){
 	}
 
 	strcpy(buff[count++], message);
+	logger(message, 0);
 		
 	// alarm(rand() % (5*60 + 1 - 60) + 60);
 	alarm(rand() % 10 + 1);
 	
-	pthread_mutex_unlock(&buffer_mutex);
-	
+	pthread_mutex_unlock(&buffer_mutex);	
+}
+
+void logger(char *receiveMsg, int flush_remaining){
+
+	FILE *fp;
+	int i = 0, end = 0;
+	strcpy(log_buffer[curr_log_count++], receiveMsg);
+	// determine if logging to file will take place
+	if (curr_log_count == LOG_BATCH_SIZE || flush_remaining){
+		printf("LOGGER:\tLogging into file...\n");
+		end = curr_log_count;
+		curr_log_count = 0;
+		// write to file
+		fp = fopen("stats.log", "a+");
+		for (int i = 0; i < end; i++){
+			fprintf(fp, "%s\n", log_buffer[i]);
+		}
+		fclose(fp);
+	}
+	return;
 }
