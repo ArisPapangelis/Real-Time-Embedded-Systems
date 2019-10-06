@@ -21,7 +21,7 @@
 #define SENDER 8883
 #define MAX 278
 #define BUFFLENGTH 2000
-#define STUDENTS 2
+#define STUDENTS 1
 
 void server(void);
 void *client(void *); 
@@ -32,8 +32,10 @@ void catch_int(int);
 void catch_term(int);
 
 char **IPs;
+int ip_count;
 
 char **messageList;
+int message_count;
 
 char buff[BUFFLENGTH][MAX];
 int count=0;
@@ -44,18 +46,17 @@ pthread_mutex_t fd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void initialize_addresses(char *file){
 	FILE *fp;
-	int ip_count, i;
+	int i;
 
 	fp = fopen(file, "r");
 	
 	fscanf(fp, "%d\n", &ip_count);
 	IPs = (char **)malloc(ip_count * sizeof(char *)); 
-	printf("%d\n", ip_count);
 
     for (i = 0; i < ip_count; i++){
         IPs[i] = (char *)malloc(50 * sizeof(char));
-		fgets(IPs[i], 50, fp);
-		printf("%s\n", IPs[i]);
+		fscanf(fp, "%s\n", IPs[i]);
+		IPs[i][strcspn(IPs[i], "\n")] = '\0';
 
 	} 
 	fclose(fp);
@@ -63,21 +64,23 @@ void initialize_addresses(char *file){
 
 void initialize_messages(char *file){
 	FILE *fp;
-	int message_count, i;
+	int i;
 
 	fp = fopen(file, "r");
 	
 	fscanf(fp, "%d\n", &message_count);
 	messageList = (char **)malloc(message_count * sizeof(char *)); 
-	printf("%d\n", message_count);
 
     for (i = 0; i < message_count; i++){
         messageList[i] = (char *)malloc(50 * sizeof(char));
 		fgets(messageList[i], 50, fp);
-		printf("%s\n", messageList[i]);
+		messageList[i][strcspn(messageList[i], "\n")] = '\0';
 
 	} 
 	fclose(fp);
+	for(int i = 0 ; i < message_count ; i++){
+		printf("%s\n", messageList[i]);
+	}
 }
 
 int main(int argc, char *argv[]){
