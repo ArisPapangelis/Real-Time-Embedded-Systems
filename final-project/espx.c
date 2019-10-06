@@ -18,10 +18,9 @@
 #include <pthread.h>
 
 #define PORT 2288
-#define SENDER 8883
-#define MAX 278
+#define SENDER 8906
+#define MAX_MSG_LENGTH 278
 #define BUFFLENGTH 2000
-#define STUDENTS 1
 
 void server(void);
 void *client(void *); 
@@ -37,11 +36,12 @@ int ip_count;
 
 int *IPsLastMsgSentIndex;
 char **IPsLastMsgSent;
+int *IPsToAEMs;
 
 char **messageList;
 int message_count;
 
-char buff[BUFFLENGTH][MAX];
+char buff[BUFFLENGTH][MAX_MSG_LENGTH];
 int count=0;
 int fullBuffer=0;
 
@@ -56,16 +56,17 @@ void initialize_addresses(char *file){
 	
 	fscanf(fp, "%d\n", &ip_count);
 	IPsLastMsgSentIndex = (int *)malloc(ip_count * sizeof(int));
+	IPsToAEMs =(int *)malloc(ip_count * sizeof(int));  
 
 	IPs = (char **)malloc(ip_count * sizeof(char *)); 
-	IPsLastMsgSent = (char **)malloc(ip_count * sizeof(char *)); 
+	IPsLastMsgSent = (char **)malloc(ip_count * sizeof(char *));
 
     for (i = 0; i < ip_count; i++){
 		IPsLastMsgSentIndex[i] = -1;
-        IPsLastMsgSent[i] = (char *)malloc(278 * sizeof(char));
+        IPsLastMsgSent[i] = (char *)malloc(MAX_MSG_LENGTH * sizeof(char));
         strcpy(IPsLastMsgSent[i], "null");
 		IPs[i] = (char *)malloc(50 * sizeof(char));
-		fscanf(fp, "%s\n", IPs[i]);
+		fscanf(fp, "%s %d\n", IPs[i], &IPsToAEMs[i]);
 		IPs[i][strcspn(IPs[i], "\n")] = '\0';
 
 	} 
@@ -134,6 +135,7 @@ void catch_int(int signal){
 		// free(IPsLastMsgSentIndex[i]);
 	}
 	free(IPs);
+	free(IPsToAEMs);
 	free(IPsLastMsgSent);
 	free(IPsLastMsgSentIndex);
 	exit(1);
@@ -151,6 +153,8 @@ void catch_term(int signal){
 		// free(IPsLastMsgSentIndex[i]);
 	}
 	free(IPs);
+	free(IPsToAEMs);
+
 	free(IPsLastMsgSent);
 	free(IPsLastMsgSentIndex);
 	exit(2);
@@ -203,7 +207,7 @@ void server(void){
 		pthread_create(&receiveThread, NULL, receiveMsg, &newfd);
 		
 		i++;
-		if (i>=STUDENTS) i=0;
+		if (i>=ip_count) i=0;
 		
 	}
 	
@@ -225,7 +229,7 @@ void *receiveMsg(void *newfd){
 	int i,doubleMsg,endIndex;
 	while (strcmp(receivedMsg,"Exit")!=0){
 		doubleMsg=0;
-		if (count>=2000){
+		if (count>=BUFFLENGTH){
 			count=0;
 			fullBuffer=1;
 		}
@@ -275,7 +279,7 @@ void *client(void *param){
     serv_addr.sin_port = htons(PORT); 
     
 	int j=0;
-	while (j<STUDENTS){
+	while (j<ip_count){
 		printf("CLIENT:\tTrying new connection..\n");
 		if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
 		{ 
@@ -297,7 +301,7 @@ void *client(void *param){
 		}
 		close(sock);
 		j++;
-		if (j == STUDENTS){
+		if (j == ip_count){
 			j = 0;
 			sleep(10);
 		}
@@ -309,15 +313,18 @@ void *client(void *param){
 void sendMsgs(int sock, int receiver){
 	int last_msg_sent_index = IPsLastMsgSentIndex[receiver];
 	char *last_msg_sent = IPsLastMsgSent[receiver];
+
 	int endIndex = count;
+	if(endIndex >= BUFFLENGTH){
+		endIndex = 0;
+	}
 	char ack[3];
 
 	if((last_msg_sent_index != endIndex) || (strcmp(last_msg_sent, buff[endIndex]) != 0)){
 		do {
-			if(last_msg_sent_index >= BUFFLENGTH - 1){
+			last_msg_sent_index++;
+			if(last_msg_sent_index >= BUFFLENGTH){
 				last_msg_sent_index = 0;
-			} else {
-				last_msg_sent_index++;
 			}
 
 			printf("CLIENT:\tSending message to %s\n", IPs[receiver]);
@@ -329,12 +336,13 @@ void sendMsgs(int sock, int receiver){
 			printf("CLIENT:\tReceived ack!\n");
 
 			last_msg_sent = buff[last_msg_sent_index];
+			printf("\t\t\tlast_msg_sent_index:%d / %d", last_msg_sent_index, endIndex);
 			
 		} while (last_msg_sent_index != endIndex);
 		printf("CLIENT:\tSending Exit...\n");
 		send(sock, "Exit", strlen("Exit") + 1, 0);
 		IPsLastMsgSentIndex[receiver] = last_msg_sent_index;
-		IPsLastMsgSent[receiver] = last_msg_sent;
+		strcpy(IPsLastMsgSent[receiver], last_msg_sent);
 	} else {
 		printf("CLIENT:\tNo need of new messages\n");
 	}
@@ -350,19 +358,19 @@ void produceMsg(int sig){
 	
 	char message[278];
 	unsigned int sender = SENDER;
-	
-	int rS = rand() % STUDENTS;
-	char receiver[5] = { IPs[rS][11], '\0'};
-	
-	sprintf(message, "%d_%s_%d_%s",sender, receiver, (unsigned)time(NULL), messageList[rand() % message_count]);
-	
-	if (count >= 2000){
+		
+	sprintf(
+		message, 
+		"%d_%d_%d_%s",
+		sender, IPsToAEMs[rand() % ip_count], (unsigned)time(NULL), messageList[rand() % message_count]
+	);
+
+	if (count >= BUFFLENGTH){
 		count = 0;
 		fullBuffer = 1;
 	}
 
-	strcpy(buff[count], message);
-	count++;
+	strcpy(buff[count++], message);
 		
 	// alarm(rand() % (5*60 + 1 - 60) + 60);
 	alarm(rand() % 10 + 1);
