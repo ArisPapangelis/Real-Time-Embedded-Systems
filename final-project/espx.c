@@ -35,8 +35,8 @@ void sendMsgs(int, int);
 char **IPs;
 int ip_count;
 
-int **IPsLastMsgReceivedIndex;
-char **IPsLastMsgReceived;
+int *IPsLastMsgSentIndex;
+char **IPsLastMsgSent;
 
 char **messageList;
 int message_count;
@@ -55,15 +55,15 @@ void initialize_addresses(char *file){
 	fp = fopen(file, "r");
 	
 	fscanf(fp, "%d\n", &ip_count);
-	IPsLastMsgReceivedIndex = (int **)malloc(ip_count * sizeof(int));
+	IPsLastMsgSentIndex = (int *)malloc(ip_count * sizeof(int));
 
 	IPs = (char **)malloc(ip_count * sizeof(char *)); 
-	IPsLastMsgReceived = (char **)malloc(ip_count * sizeof(char *)); 
+	IPsLastMsgSent = (char **)malloc(ip_count * sizeof(char *)); 
 
     for (i = 0; i < ip_count; i++){
-		IPsLastMsgReceivedIndex[i] = 0;
-        IPsLastMsgReceived[i] = (char *)malloc(278 * sizeof(char));
-        strcpy(IPsLastMsgReceived[i], "null");
+		IPsLastMsgSentIndex[i] = -1;
+        IPsLastMsgSent[i] = (char *)malloc(278 * sizeof(char));
+        strcpy(IPsLastMsgSent[i], "null");
 		IPs[i] = (char *)malloc(50 * sizeof(char));
 		fscanf(fp, "%s\n", IPs[i]);
 		IPs[i][strcspn(IPs[i], "\n")] = '\0';
@@ -131,11 +131,11 @@ void catch_int(int signal){
 
 	for(int i = 0; i < ip_count; i++){
 		free(IPs[i]);
-		free(IPsLastMsgReceivedIndex[i]);
+		// free(IPsLastMsgSentIndex[i]);
 	}
 	free(IPs);
-	free(IPsLastMsgReceived);
-	free(IPsLastMsgReceivedIndex);
+	free(IPsLastMsgSent);
+	free(IPsLastMsgSentIndex);
 	exit(1);
 }
 
@@ -148,11 +148,11 @@ void catch_term(int signal){
 
 	for(int i = 0; i < ip_count; i++){
 		free(IPs[i]);
-		free(IPsLastMsgReceivedIndex[i]);
+		// free(IPsLastMsgSentIndex[i]);
 	}
 	free(IPs);
-	free(IPsLastMsgReceived);
-	free(IPsLastMsgReceivedIndex);
+	free(IPsLastMsgSent);
+	free(IPsLastMsgSentIndex);
 	exit(2);
 }
 
@@ -247,6 +247,7 @@ void *receiveMsg(void *newfd){
 		if (doubleMsg==0){
 			pthread_mutex_lock(&buffer_mutex);
 			strcpy(buff[count], receivedMsg);
+			printf("Count:%d\n", count);
 			count++;
 			pthread_mutex_unlock(&buffer_mutex);
 		}
@@ -257,7 +258,7 @@ void *receiveMsg(void *newfd){
 	for (int i=0; i<count;i++){
 		printf("\t%s\n",buff[i]);
 	}
-	
+	printf("Count:%d\n", count);
 	printf("SERVER:\tEnding connection...\n");
 
 	close(sock);
@@ -306,8 +307,8 @@ void *client(void *param){
 }
 
 void sendMsgs(int sock, int receiver){
-	int last_msg_sent_index = *IPsLastMsgReceivedIndex[receiver];
-	char *last_msg_sent = IPsLastMsgReceived[receiver];
+	int last_msg_sent_index = IPsLastMsgSentIndex[receiver];
+	char *last_msg_sent = IPsLastMsgSent[receiver];
 	int endIndex = count;
 	char ack[3];
 
@@ -330,9 +331,13 @@ void sendMsgs(int sock, int receiver){
 			last_msg_sent = buff[last_msg_sent_index];
 			
 		} while (last_msg_sent_index != endIndex);
+		printf("CLIENT:\tSending Exit...\n");
+		send(sock, "Exit", strlen("Exit") + 1, 0);
+		IPsLastMsgSentIndex[receiver] = last_msg_sent_index;
+		IPsLastMsgSent[receiver] = last_msg_sent;
+	} else {
+		printf("CLIENT:\tNo need of new messages\n");
 	}
-	
-	printf("CLIENT:\t No need of new messages\n");
 }
 
 void produceMsg(int sig){
@@ -347,14 +352,15 @@ void produceMsg(int sig){
 	unsigned int sender = SENDER;
 	
 	int rS = rand() % STUDENTS;
-	char receiver[5] = { IPs[rS][13], '\0'};
+	char receiver[5] = { IPs[rS][11], '\0'};
 	
 	sprintf(message, "%d_%s_%d_%s",sender, receiver, (unsigned)time(NULL), messageList[rand() % message_count]);
 	
 	if (count >= 2000){
 		count = 0;
 		fullBuffer = 1;
-	}	
+	}
+
 	strcpy(buff[count], message);
 	count++;
 		
