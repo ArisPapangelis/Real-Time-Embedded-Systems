@@ -34,6 +34,9 @@ void catch_term(int);
 char **IPs;
 int ip_count;
 
+int *IPsLastMsgReceivedIndex;
+char **IPsLastMsgReceived;
+
 char **messageList;
 int message_count;
 
@@ -51,10 +54,16 @@ void initialize_addresses(char *file){
 	fp = fopen(file, "r");
 	
 	fscanf(fp, "%d\n", &ip_count);
+	IPsLastMsgReceivedIndex = (int **)malloc(ip_count * sizeof(int));
+
 	IPs = (char **)malloc(ip_count * sizeof(char *)); 
+	IPsLastMsgReceived = (char **)malloc(ip_count * sizeof(char *)); 
 
     for (i = 0; i < ip_count; i++){
-        IPs[i] = (char *)malloc(50 * sizeof(char));
+		IPsLastMsgReceivedIndex[i] = 0;
+        IPsLastMsgReceived[i] = (char *)malloc(278 * sizeof(char));
+        strcpy(IPsLastMsgReceived[i], "null");
+		IPs[i] = (char *)malloc(50 * sizeof(char));
 		fscanf(fp, "%s\n", IPs[i]);
 		IPs[i][strcspn(IPs[i], "\n")] = '\0';
 
@@ -121,8 +130,11 @@ void catch_int(int signal){
 
 	for(int i = 0; i < ip_count; i++){
 		free(IPs[i]);
+		free(IPsLastMsgReceivedIndex[i]);
 	}
 	free(IPs);
+	free(IPsLastMsgReceived);
+	free(IPsLastMsgReceivedIndex);
 	exit(1);
 }
 
@@ -135,8 +147,11 @@ void catch_term(int signal){
 
 	for(int i = 0; i < ip_count; i++){
 		free(IPs[i]);
+		free(IPsLastMsgReceivedIndex[i]);
 	}
 	free(IPs);
+	free(IPsLastMsgReceived);
+	free(IPsLastMsgReceivedIndex);
 	exit(2);
 }
 
@@ -208,34 +223,32 @@ void *receiveMsg(void *newfd){
 
 	int i,doubleMsg,endIndex;
 	while (strcmp(receivedMsg,"Exit")!=0){
-		// printf("dasdasdasdqwdqwdqwd\n");
-		// printf("%s",receivedMsg);
-		// pthread_mutex_lock(&mutex);
-		// doubleMsg=0;
-		// if (count>=2000){
-		// 	count=0;
-		// 	fullBuffer=1;
-		// }
+		doubleMsg=0;
+		if (count>=2000){
+			count=0;
+			fullBuffer=1;
+		}
 		
-		// if (fullBuffer==0) {
-		// 	endIndex=count;
-		// }
-		// else {
-		// 	endIndex=BUFFLENGTH;
-		// }
+		if (fullBuffer==0) {
+			endIndex=count;
+		}
+		else {
+			endIndex=BUFFLENGTH;
+		}
 		
-		// for (i=0; i<endIndex; i++){
-		// 	if (strcmp(receivedMsg, buff[i])==0){
-		// 		doubleMsg=1;
-		// 		break;
-		// 	}
-		// }
-		// if (doubleMsg==0){
-		// 	strcpy(buff[count], receivedMsg);
-		// }
-		// count++;
-		// pthread_mutex_unlock(&mutex);
+		for (i=0; i<endIndex; i++){
+			if (strcmp(receivedMsg, buff[i])==0){
+				doubleMsg=1;
+				break;
+			}
+		}
 		
+		if (doubleMsg==0){
+			pthread_mutex_lock(&buffer_mutex);
+			strcpy(buff[count], receivedMsg);
+			count++;
+			pthread_mutex_unlock(&buffer_mutex);
+		}
 		printf("SERVER:\tSending OK...\n");
 		send(sock,"OK",strlen("OK")+1,0);
 		recv(sock, receivedMsg, sizeof(receivedMsg), 0);
@@ -277,43 +290,57 @@ void *client(void *param){
 			printf("CLIENT:\tConnection Failed with IP %s\n", IPs[j]);
 		} 
 		else {
-			//pthread_t sendThread;
-			//pthread_create(&sendThread,NULL,sendMsg,&sock);
-			
-			int endIndex;
-			if (fullBuffer==0) {
-				endIndex=count;
-			}
-			else {
-				endIndex=BUFFLENGTH;
-			}
-			char ack[3];
+			sendMsgs(sock, j);			
 
-			for (int i = 0; i < endIndex; i++){
-				printf("CLIENT:\tSending message\n");
-				send(sock, buff[i], strlen(buff[i])+1, 0);
-				printf("CLIENT:\tReceiving ack\n");
-				recv(sock,ack,sizeof(ack),0);
-				printf("CLIENT:\tReceived ack!\n");
-			}
-			printf("CLIENT:\tSending OK\n");
-			send(sock, "Exit", strlen("Exit")+1,0);
 		}
 		close(sock);
 		j++;
 		if (j == STUDENTS){
 			j = 0;
-			sleep(1);
+			sleep(10);
 		}
 	}
 	
 	return NULL;
 }
 
+void sendMsgs(int sock, int receiver){
+	int last_msg_sent_index = IPsLastMsgReceivedIndex[receiver];
+	char *last_msg_sent = IPsLastMsgReceived[receiver];
+	int endIndex = count;
+	char ack[3];
+
+	if((last_msg_sent_index != endIndex) || (strcmp(last_msg_sent, buff[endIndex]) != 0)){
+		do {
+			if(last_msg_sent_index >= BUFFLENGTH - 1){
+				last_msg_sent_index = 0;
+			} else {
+				last_msg_sent_index++;
+			}
+
+			printf("CLIENT:\tSending message to %s\n", IPs[receiver]);
+			if (send(sock, buff[last_msg_sent_index], strlen(buff[last_msg_sent_index])+1, 0) == -1){
+				break;
+			};
+			printf("CLIENT:\tReceiving ack\n");
+			recv(sock, ack,sizeof(ack),0);
+			printf("CLIENT:\tReceived ack!\n");
+
+			last_msg_sent = buff[last_msg_sent_index];
+			
+		} while (last_msg_sent_index != endIndex);
+	}
+	
+	printf("CLIENT:\t No need of new messages\n");
+}
 
 void produceMsg(int sig){
 	
-	pthread_mutex_lock(&mutex);
+	// avoid deadlock on alarm
+	if (pthread_mutex_trylock(&buffer_mutex) != 0){
+		alarm(10);
+		return;
+	}
 	
 	char message[278];
 	unsigned int sender = SENDER;
@@ -321,7 +348,7 @@ void produceMsg(int sig){
 	int rS = rand() % STUDENTS;
 	char receiver[5] = { IPs[rS][13], '\0'};
 	
-	sprintf(message, "%d_%s_%d_%s",sender, receiver, (unsigned)time(NULL), messageList[rand()%4]);
+	sprintf(message, "%d_%s_%d_%s",sender, receiver, (unsigned)time(NULL), messageList[rand() % message_count]);
 	
 	if (count >= 2000){
 		count = 0;
@@ -333,6 +360,6 @@ void produceMsg(int sig){
 	// alarm(rand() % (5*60 + 1 - 60) + 60);
 	alarm(rand() % 10 + 1);
 	
-	pthread_mutex_unlock(&mutex);
+	pthread_mutex_unlock(&buffer_mutex);
 	
 }
