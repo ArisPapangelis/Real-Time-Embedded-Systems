@@ -21,15 +21,16 @@
 #define SENDER 8906
 #define MAX_MSG_LENGTH 278
 #define BUFFLENGTH 2000
+#define LOG_BATCH_SIZE 10
 
 void server(void);
 void *client(void *); 
 void *receiveMsg(void *);
 //void *sendMsg(void *);
 void produceMsg(int);
-void catch_int(int);
-void catch_term(int);
+void catch_int_term(int);
 void sendMsgs(int, int);
+void logger(char *, int);
 
 char **IPs;
 int ip_count;
@@ -107,8 +108,8 @@ int main(int argc, char *argv[]){
 	
 	printf("MAIN:\tSetting up sig handlers...\n");
 	signal(SIGALRM,produceMsg);
-	signal(SIGTERM, catch_term);
-	signal(SIGINT, catch_int);
+	signal(SIGTERM, catch_int_term);
+	signal(SIGINT, catch_int_term);
 	srand(time(NULL));
 
 	printf("MAIN:\tIniatilizing buffer...\n");
@@ -123,8 +124,9 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-void catch_int(int signal){
+void catch_int_term(int signal){
 	printf("INT signal ...\n");
+	logger("", 1);
 	for(int i = 0; i < message_count; i++){
 		free(messageList[i]);
 	}
@@ -139,25 +141,6 @@ void catch_int(int signal){
 	free(IPsLastMsgSent);
 	free(IPsLastMsgSentIndex);
 	exit(1);
-}
-
-void catch_term(int signal){
-	printf("KILL signal ...\n");
-	for(int i = 0; i < message_count; i++){
-		free(messageList[i]);
-	}
-	free(messageList);
-
-	for(int i = 0; i < ip_count; i++){
-		free(IPs[i]);
-		// free(IPsLastMsgSentIndex[i]);
-	}
-	free(IPs);
-	free(IPsToAEMs);
-
-	free(IPsLastMsgSent);
-	free(IPsLastMsgSentIndex);
-	exit(2);
 }
 
 void server(void){
@@ -214,7 +197,6 @@ void server(void){
 }
 
 void *receiveMsg(void *newfd){
-	//printf("qawdqawd\n");
 	int *temp = (int *) newfd;
 	int sock = *temp;
 
