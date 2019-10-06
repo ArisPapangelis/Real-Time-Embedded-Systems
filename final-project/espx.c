@@ -114,11 +114,29 @@ int main(int argc, char *argv[]){
 
 void catch_int(int signal){
 	printf("INT signal ...\n");
+	for(int i = 0; i < message_count; i++){
+		free(messageList[i]);
+	}
+	free(messageList);
+
+	for(int i = 0; i < ip_count; i++){
+		free(IPs[i]);
+	}
+	free(IPs);
 	exit(1);
 }
 
 void catch_term(int signal){
 	printf("KILL signal ...\n");
+	for(int i = 0; i < message_count; i++){
+		free(messageList[i]);
+	}
+	free(messageList);
+
+	for(int i = 0; i < ip_count; i++){
+		free(IPs[i]);
+	}
+	free(IPs);
 	exit(2);
 }
 
