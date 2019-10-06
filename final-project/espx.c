@@ -251,11 +251,9 @@ void *receiveMsg(void *newfd){
 		if (doubleMsg==0){
 			pthread_mutex_lock(&buffer_mutex);
 			strcpy(buff[count], receivedMsg);
-			printf("Count:%d\n", count);
 			count++;
 			pthread_mutex_unlock(&buffer_mutex);
 		}
-		printf("SERVER:\tSending OK...\n");
 		send(sock,"OK",strlen("OK")+1,0);
 		recv(sock, receivedMsg, sizeof(receivedMsg), 0);
 	}
@@ -327,19 +325,14 @@ void sendMsgs(int sock, int receiver){
 				last_msg_sent_index = 0;
 			}
 
-			printf("CLIENT:\tSending message to %s\n", IPs[receiver]);
 			if (send(sock, buff[last_msg_sent_index], strlen(buff[last_msg_sent_index])+1, 0) == -1){
 				break;
 			};
-			printf("CLIENT:\tReceiving ack\n");
 			recv(sock, ack,sizeof(ack),0);
-			printf("CLIENT:\tReceived ack!\n");
 
 			last_msg_sent = buff[last_msg_sent_index];
-			printf("\t\t\tlast_msg_sent_index:%d / %d", last_msg_sent_index, endIndex);
 			
 		} while (last_msg_sent_index != endIndex);
-		printf("CLIENT:\tSending Exit...\n");
 		send(sock, "Exit", strlen("Exit") + 1, 0);
 		IPsLastMsgSentIndex[receiver] = last_msg_sent_index;
 		strcpy(IPsLastMsgSent[receiver], last_msg_sent);
