@@ -6,11 +6,9 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <string.h>
-
 #include <ctype.h>
 #include <sys/time.h>
 #include <time.h>
-
 #include <sys/socket.h> 
 #include <arpa/inet.h> 
 #include <netinet/in.h> 
@@ -18,110 +16,67 @@
 #include <pthread.h>
 
 #define PORT 2288
-#define SENDER 8906
-#define MAX_MSG_LENGTH 278
+#define SENDERAEM 8883
+#define MAX 278
 #define BUFFLENGTH 2000
+#define MESSAGECOUNT 12
 #define LOG_BATCH_SIZE 10
+#define STUDENTS 2
+
 
 void server(void);
 void *client(void *); 
 void *receiveMsg(void *);
-//void *sendMsg(void *);
 void produceMsg(int);
-void catch_int_term(int);
 void sendMsgs(int, int);
+void catch_int_term(int);
 void logger(char *, int);
 
-char **IPs;
-int ip_count;
 
-int *IPsLastMsgSentIndex;
-char **IPsLastMsgSent;
-int *IPsToAEMs;
+char IPs[][11]= { "10.0.88.58", "10.0.89.06" };
 
-char **messageList;
-int message_count;
+unsigned int AEMs[] = {8858, 8906};
+char messageList[][256]= {
+	"Today is a great day!", "Fancy grabbing a drink later?", "Wanna go to the gym?", "Eat clen tren hard test your limits.",
+	"I hate threads.", "This would be done in half the python code!", "Java is the best programming language", "Compound lifts are better than isolation.",
+	"Me lo pide sin gorrito.", "Me pongo rolex como si fueran Casio.", "Si tu novio te deja sola.", "Reggaeton is the best musical genre."
+};
 
-char buff[BUFFLENGTH][MAX_MSG_LENGTH];
+//Client global variables
+int IPsLastMsgSentIndex[STUDENTS];
+char IPsLastMsgSent[STUDENTS][278];
+
+//Buffer variables
+char buff[BUFFLENGTH][MAX];
 int count=0;
 int fullBuffer=0;
 
-char log_buffer[LOG_BATCH_SIZE][MAX_MSG_LENGTH];
+//Logging variables
+char log_buffer[LOG_BATCH_SIZE][MAX];
 int curr_log_count = 0;
 
-pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+//Mutexes for thread synchronization
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t fd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void initialize_addresses(char *file){
-	FILE *fp;
-	int i;
-
-	fp = fopen(file, "r");
-	
-	fscanf(fp, "%d\n", &ip_count);
-	IPsLastMsgSentIndex = (int *)malloc(ip_count * sizeof(int));
-	IPsToAEMs =(int *)malloc(ip_count * sizeof(int));  
-
-	IPs = (char **)malloc(ip_count * sizeof(char *)); 
-	IPsLastMsgSent = (char **)malloc(ip_count * sizeof(char *));
-
-    for (i = 0; i < ip_count; i++){
-		IPsLastMsgSentIndex[i] = -1;
-        IPsLastMsgSent[i] = (char *)malloc(MAX_MSG_LENGTH * sizeof(char));
-        strcpy(IPsLastMsgSent[i], "null");
-		IPs[i] = (char *)malloc(50 * sizeof(char));
-		fscanf(fp, "%s %d\n", IPs[i], &IPsToAEMs[i]);
-		IPs[i][strcspn(IPs[i], "\n")] = '\0';
-
-	} 
-	fclose(fp);
-}
-
-void initialize_messages(char *file){
-	FILE *fp;
-	int i;
-
-	fp = fopen(file, "r");
-	
-	fscanf(fp, "%d\n", &message_count);
-	messageList = (char **)malloc(message_count * sizeof(char *)); 
-
-    for (i = 0; i < message_count; i++){
-        messageList[i] = (char *)malloc(50 * sizeof(char));
-		fgets(messageList[i], 50, fp);
-		messageList[i][strcspn(messageList[i], "\n")] = '\0';
-
-	} 
-	fclose(fp);
-	for(int i = 0 ; i < message_count ; i++){
-		printf("%s\n", messageList[i]);
-	}
-}
-
 int main(int argc, char *argv[]){
-	printf("%d\n", argc);
-	if(argc < 3){
-		printf("Not enough arguments given");
-		exit(-1);
+	for (int k=0; k<STUDENTS; k++){
+		IPsLastMsgSentIndex[k]=-1;
+		strcpy(IPsLastMsgSent[k], "null");
 	}
 
-	// populate IPs and messageList
-	initialize_addresses(argv[1]);
-	initialize_messages(argv[2]);
-	
-	printf("MAIN:\tSetting up sig handlers...\n");
+
 	signal(SIGALRM,produceMsg);
 	signal(SIGTERM, catch_int_term);
 	signal(SIGINT, catch_int_term);
 	srand(time(NULL));
 
-	printf("MAIN:\tIniatilizing buffer...\n");
+
 	produceMsg(0);
 
 	pthread_t clientThread;	
 	pthread_create(&clientThread, NULL, client, NULL);
 	
-	printf("MAIN:\tStarting server...\n");
 	server();
 	
 	return 0;
@@ -130,26 +85,12 @@ int main(int argc, char *argv[]){
 void catch_int_term(int signal){
 	printf("INT signal ...\n");
 	logger("", 1);
-	for(int i = 0; i < message_count; i++){
-		free(messageList[i]);
-	}
-	free(messageList);
-
-	for(int i = 0; i < ip_count; i++){
-		free(IPs[i]);
-		// free(IPsLastMsgSentIndex[i]);
-	}
-	free(IPs);
-	free(IPsToAEMs);
-	free(IPsLastMsgSent);
-	free(IPsLastMsgSentIndex);
 	exit(1);
 }
 
 void server(void){
 	int sockfd,newfd;
 	int opt = 1;
-	int i;
 	struct sockaddr_in address;
 	int addrlen = sizeof(address);
 	
@@ -179,21 +120,17 @@ void server(void){
         perror("SERVER:\tlisten\n"); 
         exit(EXIT_FAILURE); 
     } 
-
 	for (;;){
-		printf("SERVER:\tAccepting new connections...\n");
+
 		pthread_mutex_lock(&fd_mutex);
 		if ((newfd = accept(sockfd, (struct sockaddr *)&address,  (socklen_t*)&addrlen))<0) {
 			perror("accept"); 
 			exit(EXIT_FAILURE); 
 		} 
-		printf("SERVER:\tConnection accepted...\n");
-		//printf("qawdqawd\n");
+
 		pthread_t receiveThread;
 		pthread_create(&receiveThread, NULL, receiveMsg, &newfd);
 		
-		i++;
-		if (i>=ip_count) i=0;
 		
 	}
 	
@@ -203,13 +140,13 @@ void *receiveMsg(void *newfd){
 	int *temp = (int *) newfd;
 	int sock = *temp;
 
-	printf("SERVER:\tWaiting for message\n");
-	pthread_mutex_unlock(&fd_mutex);
 
+	pthread_mutex_unlock(&fd_mutex);
+	
 	char receivedMsg[278];
 
 	recv(sock, receivedMsg, sizeof(receivedMsg), 0);
-	printf("SERVER:\tProcessing message:%s\n", receivedMsg);
+
 
 	int i,doubleMsg,endIndex;
 	while (strcmp(receivedMsg,"Exit")!=0){
@@ -220,36 +157,39 @@ void *receiveMsg(void *newfd){
 		}
 		
 		if (fullBuffer==0) {
-			endIndex=count;
+		 	endIndex=count;
 		}
 		else {
-			endIndex=BUFFLENGTH;
+		 	endIndex=BUFFLENGTH;
 		}
 		
 		for (i=0; i<endIndex; i++){
 			if (strcmp(receivedMsg, buff[i])==0){
-				doubleMsg=1;
-				break;
-			}
+		 		doubleMsg=1;
+		 		break;
+		 	}
 		}
 		
 		if (doubleMsg==0){
-			pthread_mutex_lock(&buffer_mutex);
-			strcpy(buff[count], receivedMsg);
+			pthread_mutex_lock(&mutex);
+		 	strcpy(buff[count], receivedMsg);
 			logger(receivedMsg, 0);
 			count++;
-			pthread_mutex_unlock(&buffer_mutex);
+			pthread_mutex_unlock(&mutex);
 		}
+
 		send(sock,"OK",strlen("OK")+1,0);
 		recv(sock, receivedMsg, sizeof(receivedMsg), 0);
 	}
+	
+	//DEBUG
 	for (int i=0; i<count;i++){
 		printf("\t%s\n",buff[i]);
 	}
 	printf("Count:%d\n", count);
-	printf("SERVER:\tEnding connection...\n");
 
 	close(sock);
+	
 	pthread_detach(pthread_self());
 	pthread_exit(NULL);
 }
@@ -263,8 +203,8 @@ void *client(void *param){
     serv_addr.sin_port = htons(PORT); 
     
 	int j=0;
-	while (j<ip_count){
-		printf("CLIENT:\tTrying new connection..\n");
+	while (j<STUDENTS){
+
 		if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
 		{ 
 			printf("CLIENT:\tSocket creation error \n"); 
@@ -280,14 +220,13 @@ void *client(void *param){
 			printf("CLIENT:\tConnection Failed with IP %s\n", IPs[j]);
 		} 
 		else {
-			sendMsgs(sock, j);			
-
+			sendMsgs(sock, j);
 		}
 		close(sock);
 		j++;
-		if (j == ip_count){
+		if (j == STUDENTS){
 			j = 0;
-			sleep(10);
+			sleep(60);
 		}
 	}
 	
@@ -297,7 +236,6 @@ void *client(void *param){
 void sendMsgs(int sock, int receiver){
 	int last_msg_sent_index = IPsLastMsgSentIndex[receiver];
 	char *last_msg_sent = IPsLastMsgSent[receiver];
-
 	int endIndex = count;
 	if(endIndex >= BUFFLENGTH){
 		endIndex = 0;
@@ -311,65 +249,74 @@ void sendMsgs(int sock, int receiver){
 				last_msg_sent_index = 0;
 			}
 
+			
 			if (send(sock, buff[last_msg_sent_index], strlen(buff[last_msg_sent_index])+1, 0) == -1){
 				break;
 			};
+			
 			recv(sock, ack,sizeof(ack),0);
+		
 
 			last_msg_sent = buff[last_msg_sent_index];
 			
 		} while (last_msg_sent_index != endIndex);
+
 		send(sock, "Exit", strlen("Exit") + 1, 0);
 		IPsLastMsgSentIndex[receiver] = last_msg_sent_index;
 		strcpy(IPsLastMsgSent[receiver], last_msg_sent);
-	} else {
-		printf("CLIENT:\tNo need of new messages\n");
+
+	} 
+	else {
+		printf("No need of new messages\n");
 	}
 }
 
 void produceMsg(int sig){
 	
-	// avoid deadlock on alarm
-	if (pthread_mutex_trylock(&buffer_mutex) != 0){
-		alarm(10);
+	if (pthread_mutex_trylock(&mutex)!=0){
+		alarm(3);
 		return;
 	}
 	
 	char message[278];
-	unsigned int sender = SENDER;
-		
-	sprintf(
-		message, 
-		"%d_%d_%d_%s",
-		sender, IPsToAEMs[rand() % ip_count], (unsigned)time(NULL), messageList[rand() % message_count]
-	);
-
+	unsigned int sender = SENDERAEM;
+	
+	sprintf(message, "%d_%d_%d_%s",sender, AEMs[rand()%STUDENTS], (unsigned)time(NULL), messageList[rand()%MESSAGECOUNT]);
+	
 	if (count >= BUFFLENGTH){
 		count = 0;
 		fullBuffer = 1;
-	}
-
-	strcpy(buff[count++], message);
+	}	
+	strcpy(buff[count], message);
+	count++;
 	logger(message, 0);
-		
-	// alarm(rand() % (5*60 + 1 - 60) + 60);
-	alarm(rand() % 10 + 1);
 	
-	pthread_mutex_unlock(&buffer_mutex);	
+	int t = rand() % (1*60 + 1 - 20) + 20; //produce message every 20secs to 60secs
+	FILE *fp;
+	fp = fopen("timebetweenmessages.log", "a+");
+	fprintf(fp, "%d\n", t);
+	fclose(fp);
+
+	alarm(t);
+	
+	pthread_mutex_unlock(&mutex);
+	
 }
+
 
 void logger(char *receiveMsg, int flush_remaining){
 
 	FILE *fp;
 	int i = 0, end = 0;
-	strcpy(log_buffer[curr_log_count++], receiveMsg);
+	strcpy(log_buffer[curr_log_count], receiveMsg);
+	curr_log_count++;
 	// determine if logging to file will take place
 	if (curr_log_count == LOG_BATCH_SIZE || flush_remaining){
-		printf("LOGGER:\tLogging into file...\n");
+		
 		end = curr_log_count;
 		curr_log_count = 0;
 		// write to file
-		fp = fopen("stats.log", "a+");
+		fp = fopen("statistics.log", "a+");
 		for (int i = 0; i < end; i++){
 			fprintf(fp, "%s\n", log_buffer[i]);
 		}
