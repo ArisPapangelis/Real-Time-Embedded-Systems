@@ -1,4 +1,4 @@
-# Real-Time-Embedded-Systems-ECE
+# Real-Time-Embedded-Systems
 Assignments for the course Real Time Embedded Systems at ECE AUTh.
 
 ## Introductory project
